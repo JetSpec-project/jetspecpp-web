@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>JetSpec++: Foresight Parallel Drafting with Self Refinements</title>
+  <meta name="description" content="JetSpec++ drafts the next block on a second GPU while the target model verifies the current one: up to 7.45x faster than autoregressive decoding and 1.54x faster than DSpark, with the target's output distribution unchanged.">
+  <script>
+    // Apply the stored theme before the first paint; without a stored choice, follow the OS.
+    (function () {
+      var stored = null;
+      try { stored = localStorage.getItem("jspp-theme"); } catch (e) {}
+      if (stored === "light" || stored === "dark") document.documentElement.setAttribute("data-theme", stored);
+    })();
+  </script>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <main class="page" id="top">
+    <div class="topbar">
+      <a class="brand" href="https://haoailab.com/" title="Hao AI Lab @ UCSD">Hao AI Lab · UC San Diego</a>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch between light and dark">
+        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+    </div>
+
+    <header class="paper-header">
+      <h1>JetSpec++</h1>
+      <p class="subtitle">Foresight Parallel Drafting with Self Refinements</p>
+      <p class="authors">
+        Zhaoxiang Feng<sup>*1</sup>&nbsp; Lanxiang Hu<sup>*1</sup>&nbsp; Haoran Yuan<sup>2</sup>&nbsp; Yu-Yang Qian<sup>3</sup>&nbsp; Jihui Yang<sup>4</sup>&nbsp; Peng Zhao<sup>3</sup>&nbsp; Yibo Zhu<sup>5</sup>&nbsp; Tajana Rosing<sup>1</sup>&nbsp; Hao Zhang<sup>1</sup>
+      </p>
+      <p class="affiliations"><sup>1</sup>UC San Diego &nbsp; <sup>2</sup>UIUC &nbsp; <sup>3</sup>Nanjing University &nbsp; <sup>4</sup>Meta &nbsp; <sup>5</sup>StepFun &nbsp; <sup>*</sup>Equal contribution</p>
+      <nav class="resource-links" aria-label="Project resources">
+        <a href="https://arxiv.org/abs/2610.19792">[Paper]</a>
+        <a href="https://github.com/hao-ai-lab/JetSpec">[Code]</a>
+        <a href="https://huggingface.co/JetSpec">[Models]</a>
+        <a href="#bibtex">[BibTeX]</a>
+        <a href="https://jetspec-project.github.io/jetspec-web/">[JetSpec]</a>
+      </nav>
+    </header>
+
+    <p class="lead">
+      Speculative decoding speeds up a large model only as far as its drafts are cheap and its acceptance is high.
+      A strong learned draft model that reads the target's hidden states can draft only after each verification, so its cost stays on the critical path.
+      <strong>JetSpec++</strong> keeps the strong draft model and hides almost all of its cost.
+      It drafts the next block on a second GPU while the target verifies the current one.
+      It predicts the verification outcome with <strong>foresight drafting</strong>, and it refines the draft with Jacobi passes while it waits.
+      With the target and the draft model on two GB200 GPUs, it decodes Qwen3-8B up to <strong>7.45&times; faster than autoregressive decoding</strong> and <strong>1.54&times; faster than DSpark</strong>, both on one GPU.
+      The output distribution of the target model does not change.
+    </p>
+
+    <figure class="video" data-video="overview">
+      <video muted loop playsinline preload="metadata" data-src-light="media/overview-light.mp4" data-src-dark="media/overview-dark.mp4" aria-label="JetSpec++ overview video"></video>
+      <div class="video-pending" aria-hidden="true">Overview video: in preparation</div>
+    </figure>
+
+    <section class="section" id="approach">
+      <p class="sec-eyebrow">Approach</p>
+      <h2>How JetSpec++ works</h2>
+      <p>JetSpec++ combines three parts. Pipelined drafting and verification moves the draft off the critical path. Foresight drafting lets the draft model start before verification ends. Self refinement spends the freed time on better drafts.</p>
+      <figure class="video" data-video="mechanism">
+        <video muted loop playsinline preload="metadata" data-src-light="media/mechanism-light.mp4" data-src-dark="media/mechanism-dark.mp4" aria-label="JetSpec++ mechanism video"></video>
+        <div class="video-pending" aria-hidden="true">Mechanism video: in preparation</div>
+      </figure>
+
+      <h3>Pipelined drafting and verification</h3>
+      <p>JetSpec++ drafts block t+1 while the target model verifies block t, with the draft model on a second GPU. The draft process predicts the verification outcome: the number of accepted draft tokens and the identity of the bonus token. It fills a speculation cache with one pre-drafted block per likely outcome. A cache hit makes the matching block the next block. A cache miss falls back to an ordinary speculative step.</p>
+
+      <h3>Foresight drafting</h3>
+      <p>A draft model that reads the target's hidden states normally waits for verification to finish. Foresight drafting removes this wait. It predicts the target hidden states of the block under verification, scores every possible outcome, and selects the most probable ones. The draft model drafts all selected outcomes in one batch. Without context refresh, the draft model keeps 95 to 98% of the acceptance length it reaches from the target's true states.</p>
+      <p>The <strong>adapter</strong> is a hidden-to-hidden predictor. At each target layer that the draft model reads, it attends to the cached verified prefix and predicts, in one parallel pass, the target hidden states of every position in the block under verification. The <strong>decoder</strong> turns these predicted states into outcome probabilities. It reuses the frozen weights of the target's last layers, its final norm and its LM head, and it scores every outcome in one causal pass.</p>
+      <figure class="paper-figure">
+        <img src="figures/foresight-overview.svg" alt="The adapter, the decoder and the draft model filling the speculation cache" loading="lazy">
+        <figcaption>Foresight drafting. (a) The draft model drafts the selected outcomes in one batch with J+1 passes. (b) At each target layer that the draft model reads, the adapter predicts the states of the current block, and the decoder turns the top-layer predictions into the outcome distribution. (c) The speculation cache for block t+1 holds, for each selected outcome, its accepted draft tokens, the predicted states and the anchor token. Figure from the paper (Figure 2).</figcaption>
+      </figure>
+
+      <h3>Self refinement</h3>
+      <p>A parallel draft model predicts each position in the block without seeing the draft tokens before it. JetSpec++ trains the draft model to repair its own draft instead. Each Jacobi pass lets every position condition on the tokens drafted before it, and the passes run inside the time that pipelining frees.</p>
+      <p>Between two passes, JetSpec++ simulates verification with the adapter and the decoder. A <strong>context refresh</strong> re-predicts the target hidden states of the current draft. The decoder then finds the first position where its top token differs from the draft, and an <strong>anchor replacement</strong> writes the decoder's token there. The next pass redrafts only the later positions.</p>
+
+      <h3>Lossless</h3>
+      <p>Every committed token passes the target model's rejection sampling rule, so the output distribution is the target model's own. The draft, the foresight and the refinement change only the proposals.</p>
+    </section>
+
+    <section class="section" id="serving">
+      <p class="sec-eyebrow">Serving</p>
+      <h2>Decode speed on GB200</h2>
+      <p>JetSpec++ runs on its own serving engine with CUDA graphs. The target verifies each block on one GPU, and the draft model runs on a second GPU, so the draft of block t+1 overlaps the verification of block t. The repository includes the command that reruns this table on a GB200 pair.</p>
+      <div class="hero-tps">
+        <div class="ht-num"><span class="ht-pre">FP4</span>4,010<span class="ht-unit">tok/s</span></div>
+        <p class="ht-cap">
+          With FP4 weights, JetSpec++ decodes MATH-500 with Qwen3-8B at <strong>4,010 tok/s</strong> on two GB200 GPUs at batch size 1.
+          In bf16, as in the paper, it decodes <strong>1,361 tok/s</strong>: <strong>7.45&times; over AR</strong> and <strong>1.51&times; over DSpark</strong>, both on one GPU.
+        </p>
+      </div>
+      <p class="table-summary" id="speed-summary"></p>
+      <div class="table-scroll" id="speed-table"></div>
+    </section>
+
+    <section class="section" id="acceptance">
+      <p class="sec-eyebrow">Acceptance</p>
+      <h2>Tokens per round on seven benchmarks</h2>
+      <p>JetSpec++ commits more tokens per verification round than every baseline on all seven benchmarks, at temperatures 0 and 1 and at verification budgets 16 and 32. At temperature 0 and budget 16, J3-R3 averages 8.94 tokens per round on Qwen3-8B, against 6.89 for DSpark.</p>
+      <div class="filters">
+        <div class="segmented" role="group" aria-label="Temperature" data-filter="temp"></div>
+        <div class="segmented" role="group" aria-label="Verification budget" data-filter="budget"></div>
+      </div>
+      <div class="table-scroll" id="tau-table"></div>
+
+      <h3>Cost and limitations</h3>
+      <p>The speedups use two GPUs for one request, and they are measured against AR on one GPU of the same type. A round whose outcome was not pre-drafted, 7 to 11% of the rounds in Table 3, runs in series, and the margins are smaller at temperature 1.</p>
+    </section>
+
+    <section class="section bib-section" id="bibtex">
+      <h2>BibTeX</h2>
+      <pre><code>@article{feng2026jetspecpp,
+  title   = {JetSpec++: Foresight Parallel Drafting with Self Refinements},
+  author  = {Feng, Zhaoxiang and Hu, Lanxiang and Yuan, Haoran and Qian, Yu-Yang and Yang, Jihui and Zhao, Peng and Zhu, Yibo and Rosing, Tajana and Zhang, Hao},
+  journal = {arXiv preprint arXiv:2610.19792},
+  year    = {2026}
+}</code></pre>
+    </section>
+
+    <footer class="footer">
+      <a href="https://arxiv.org/abs/2610.19792">Paper</a>
+      <a href="https://github.com/hao-ai-lab/JetSpec">Code</a>
+      <a href="https://huggingface.co/JetSpec">Models</a>
+      <a href="https://jetspec-project.github.io/jetspec-web/">JetSpec</a>
+    </footer>
+  </main>
+  <script src="data.js"></script>
+  <script src="site.js"></script>
+</body>
+</html>
