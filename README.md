@@ -2,7 +2,7 @@
 
 The project website for JetSpec++: Foresight Parallel Drafting with Self Refinements ([arXiv 2610.19792](https://arxiv.org/abs/2610.19792)).
 
-This repository stays private until the release. The site is static HTML, CSS and JavaScript with no build step. When the repository becomes public, GitHub Pages serves `main` at `https://jetspec-project.github.io/jetspecpp-web/`.
+The site is static HTML, CSS and JavaScript with no build step. GitHub Pages serves `main` at [jetspec-project.github.io/jetspecpp-web](https://jetspec-project.github.io/jetspecpp-web/).
 
 ## Preview
 
