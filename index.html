@@ -61,10 +61,6 @@
       <p class="sec-eyebrow">Approach</p>
       <h2>How JetSpec++ works</h2>
       <p>JetSpec++ combines three parts. Pipelined drafting and verification moves the draft off the critical path. Foresight drafting lets the draft model start before verification ends. Self refinement spends the freed time on better drafts.</p>
-      <figure class="video" data-video="mechanism">
-        <video muted loop playsinline preload="metadata" data-src-light="media/mechanism-light.mp4" data-src-dark="media/mechanism-dark.mp4" aria-label="JetSpec++ mechanism video"></video>
-        <div class="video-pending" aria-hidden="true">Mechanism video: in preparation</div>
-      </figure>
 
       <h3>Pipelined drafting and verification</h3>
       <p>JetSpec++ drafts block t+1 while the target model verifies block t, with the draft model on a second GPU. The draft process predicts the verification outcome: the number of accepted draft tokens and the identity of the bonus token. It fills a speculation cache with one pre-drafted block per likely outcome. A cache hit makes the matching block the next block. A cache miss falls back to an ordinary speculative step.</p>
@@ -78,6 +74,11 @@
       </figure>
 
       <h3>Self refinement</h3>
+      <p>The video traces one round of self refinement under verification: a refresh, then a Jacobi pass.</p>
+      <figure class="video" data-video="mechanism">
+        <video muted loop playsinline preload="metadata" data-src-light="media/mechanism-light.mp4" data-src-dark="media/mechanism-dark.mp4" aria-label="Self refinement video"></video>
+        <div class="video-pending" aria-hidden="true">Self refinement video: in preparation</div>
+      </figure>
       <p>A parallel draft model predicts each position in the block without seeing the draft tokens before it. JetSpec++ trains the draft model to repair its own draft instead. Each Jacobi pass lets every position condition on the tokens drafted before it, and the passes run inside the time that pipelining frees.</p>
       <p>Between two passes, JetSpec++ simulates verification with the adapter and the decoder. A <strong>context refresh</strong> re-predicts the target hidden states of the current draft. The decoder then finds the first position where its top token differs from the draft, and an <strong>anchor replacement</strong> writes the decoder's token there. The next pass redrafts only the later positions.</p>
 
