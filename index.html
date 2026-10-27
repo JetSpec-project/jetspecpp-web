@@ -90,9 +90,9 @@
       <h2>Decode speed on GB200</h2>
       <p>JetSpec++ runs on its own serving engine with CUDA graphs. The target verifies each block on one GPU, and the draft model runs on a second GPU, so the draft of block t+1 overlaps the verification of block t. The repository includes the command that reruns this table on a GB200 pair.</p>
       <div class="hero-tps">
-        <div class="ht-num"><span class="ht-pre">NVFP4</span>4,100<span class="ht-unit">tok/s</span></div>
+        <div class="ht-num"><span class="ht-pre">NVFP4</span>4,117<span class="ht-unit">tok/s</span></div>
         <p class="ht-cap">
-          With NVFP4 weights and activations, JetSpec++ decodes MATH-500 with Qwen3-8B at <strong>4,100 tok/s</strong> on two GB200 GPUs at batch size 1.
+          With NVFP4 weights and activations, JetSpec++ decodes MATH-500 with Qwen3-8B at <strong>4,117 tok/s</strong> on two GB200 GPUs at batch size 1.
           In bf16, as in the paper, it decodes <strong>1,361 tok/s</strong>: <strong>7.45&times; over AR</strong> and <strong>1.51&times; over DSpark</strong>, both on one GPU.
         </p>
       </div>
