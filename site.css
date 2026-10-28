@@ -123,6 +123,14 @@ figcaption { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
 /* Paper figures keep their white page in both themes */
 .paper-figure { margin: 12px 0 8px; }
 .paper-figure img { display: block; width: 100%; height: auto; padding: 14px; border: 1px solid var(--rule); background: #ffffff; }
+/* Figure 2 has a dark copy (recoloured, same drawing); each theme shows its own */
+.paper-figure img.fig-dark { display: none; background: #26272b; }
+:root[data-theme="dark"] .paper-figure img.fig-light { display: none; }
+:root[data-theme="dark"] .paper-figure img.fig-dark { display: block; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .paper-figure img.fig-light { display: none; }
+  :root:not([data-theme="light"]) .paper-figure img.fig-dark { display: block; }
+}
 .paper-figure figcaption { margin: 10px 0 0; text-align: left; }
 
 /* Headline number, as on the JetSpec site (hero-tps): a left rule, no fill */
