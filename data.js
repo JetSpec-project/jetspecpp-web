@@ -1,30 +1,39 @@
 /* JetSpec++ site: the paper's numbers, shared by the page script. Every number is copied from
-   the paper (arXiv 2610.19792). */
+   the paper (arXiv 2610.19792), except the rows that the comments mark as measured later. */
 (function () {
   "use strict";
 
   // Paper, Table 3: GB200, batch 1, temperature 0, budget 16 (5 for SSD), 128 prompts per benchmark.
   // Columns: tok/s, speedup over AR, tau, round ms, verify ms, exposed ms, GPUs.
+  // The "disaggregated" rows are not in the paper: measured on 2026-10-29 on the same setup, with the draft
+  // model on a second GPU. Their speedup is over AR measured in the same session (Qwen3-8B 187.3 / 188.2,
+  // Qwen3.8-27B 59.6 / 60.5 tok/s). Rows of one method stay next to each other.
   var SPEED = {
     "qwen3-8b/gsm8k": { target: "Qwen3-8B", bench: "GSM8K", rows: [
       ["AR", 182.3, 1.00, 1.00, 5.49, 5.45, 0.04, 1],
       ["DSpark", 744.3, 4.08, 7.34, 9.92, 6.16, 3.76, 1],
+      ["DSpark, disaggregated", 774.0, 4.13, 7.42, null, null, null, 2],
       ["DFlash", 620.1, 3.40, 5.87, 9.52, 6.11, 3.42, 1],
+      ["DFlash, disaggregated", 625.6, 3.34, 5.87, null, null, null, 2],
       ["SSD", 276.5, 1.52, 4.06, 14.75, 6.25, 8.51, 2],
       ["JetSpec++", 1148.8, 6.30, 7.78, 6.84, 6.23, 0.61, 2]] },
     "qwen3-8b/math500": { target: "Qwen3-8B", bench: "MATH-500", rows: [
       ["AR", 182.7, 1.00, 1.00, 5.47, 5.44, 0.04, 1],
       ["DSpark", 902.1, 4.94, 8.98, 9.95, 6.16, 3.80, 1],
+      ["DSpark, disaggregated", 929.3, 4.94, 9.03, null, null, null, 2],
       ["DFlash", 795.5, 4.35, 7.65, 9.63, 6.16, 3.47, 1],
+      ["DFlash, disaggregated", 808.4, 4.30, 7.72, null, null, null, 2],
       ["SSD", 282.5, 1.55, 4.20, 14.88, 6.33, 8.55, 2],
       ["JetSpec++", 1361.1, 7.45, 9.41, 6.92, 6.26, 0.66, 2]] },
     "qwen3.8-27b/gsm8k": { target: "Qwen3.8-27B", bench: "GSM8K", rows: [
       ["AR", 60.3, 1.00, 1.00, 16.58, 16.54, 0.04, 1],
       ["DSpark", 249.6, 4.14, 7.93, 31.88, 27.42, 4.46, 1],
+      ["DSpark, disaggregated", 264.1, 4.43, 7.89, null, null, null, 2],
       ["JetSpec++", 342.4, 5.68, 9.67, 28.47, 27.76, 0.71, 2]] },
     "qwen3.8-27b/math500": { target: "Qwen3.8-27B", bench: "MATH-500", rows: [
       ["AR", 59.3, 1.00, 1.00, 16.88, 16.83, 0.04, 1],
       ["DSpark", 279.8, 4.72, 8.99, 32.09, 27.57, 4.52, 1],
+      ["DSpark, disaggregated", 299.8, 4.96, 9.02, null, null, null, 2],
       ["JetSpec++", 367.2, 6.20, 10.45, 28.47, 27.70, 0.77, 2]] }
   };
 
@@ -45,5 +54,17 @@
     }
   };
 
-  window.JSPP_DATA = { SPEED: SPEED, BENCHES: BENCHES, TAU: TAU };
+  // Batch sizes 1 to 4 on GB200, Qwen3-8B, MATH-500, over the window with every request in flight.
+  // Batch size 1 is the paper's Table 3 setup. At batch sizes 2 to 4, JetSpec++ and one-GPU DSpark are the
+  // median of three or more runs, and AR is one run. DSpark on two GPUs is one data-parallel run: one replica on
+  // each GPU, each replica serves part of the batch, totals summed. It has no value at batch size 1.
+  // Rows: method, total tok/s at batch sizes 1 to 4, tok/s per user at batch sizes 1 to 4.
+  var BATCH = [
+    ["AR", [182.7, 369.9, 548.2, 702.8], [182.7, 185.0, 182.7, 175.7]],
+    ["DSpark", [902.1, 1756.4, 2335.2, 3034.0], [902.1, 878.2, 778.4, 758.5]],
+    ["DSpark, two GPUs", [null, 1877.2, 2680.6, 3482.3], [null, 938.6, 893.5, 870.6]],
+    ["JetSpec++", [1361.1, 2249.4, 3078.4, 3859.1], [1361.1, 1124.7, 1026.1, 964.8]]
+  ];
+
+  window.JSPP_DATA = { SPEED: SPEED, BENCHES: BENCHES, TAU: TAU, BATCH: BATCH };
 })();

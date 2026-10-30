@@ -33,4 +33,4 @@ The page has a light and a dark theme. The button in the top bar switches them, 
 
 Until a file exists, its slot shows "in preparation".
 
-Every number on the page comes from the paper (arXiv 2610.19792), except the NVFP4 headline number, a measured fast-engine run that the paper does not report. The figure is the paper's Figure 2. The code is at [hao-ai-lab/JetSpec](https://github.com/hao-ai-lab/JetSpec), and the JetSpec site is [jetspec-project.github.io/jetspec-web](https://jetspec-project.github.io/jetspec-web/).
+Every number on the page comes from the paper (arXiv 2610.19792), except the NVFP4 headline number, the disaggregated rows and the batch size table. Those are measured runs that the paper does not report. The figure is the paper's Figure 2. The code is at [hao-ai-lab/JetSpec](https://github.com/hao-ai-lab/JetSpec), and the JetSpec site is [jetspec-project.github.io/jetspec-web](https://jetspec-project.github.io/jetspec-web/).

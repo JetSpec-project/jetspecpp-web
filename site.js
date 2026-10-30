@@ -3,12 +3,12 @@
 (function () {
   "use strict";
 
-  var D = window.JSPP_DATA, SPEED = D.SPEED, BENCHES = D.BENCHES, TAU = D.TAU;
+  var D = window.JSPP_DATA, SPEED = D.SPEED, BENCHES = D.BENCHES, TAU = D.TAU, BATCH = D.BATCH;
   var MODELS = [
     { key: "qwen3-8b", name: "Qwen3-8B", sched: "J1-R1" },
     { key: "qwen3.8-27b", name: "Qwen3.8-27B", sched: "J3-R3" }
   ];
-  var SPEED_BENCHES = [["gsm8k", "GSM8K"], ["math500", "MATH-500"]];
+  var SPEED_BENCHES = [["math500", "MATH-500"], ["gsm8k", "GSM8K"]];
   var state = { temp: "0", budget: "16" };
 
   /* ---------- theme and videos ---------- */
@@ -45,7 +45,7 @@
   }
 
   /* ---------- video controls: play or pause, a seek bar, the time and the speed ---------- */
-  var SPEEDS = [0.5, 0.8, 1, 1.2, 1.5, 2];
+  var SPEEDS = [0.5, 1];
   function clock(s) {
     s = Math.max(0, Math.floor(s || 0));
     return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
@@ -112,35 +112,60 @@
   }
 
   function renderSpeed() {
-    var ratios = MODELS.map(function (m) {
-      return SPEED_BENCHES.map(function (b) {
-        return fmt(speedRow(m.key, b[0], "JetSpec++")[1] / speedRow(m.key, b[0], "DSpark")[1], 2) + "×";
-      });
-    });
-    document.getElementById("speed-summary").textContent = "With Qwen3-8B, JetSpec++ decodes " + ratios[0][0] +
-      " faster than DSpark on GSM8K and " + ratios[0][1] + " faster on MATH-500. With Qwen3.8-27B, it decodes " +
-      ratios[1][0] + " and " + ratios[1][1] + " faster. The full table:";
-    var head = '<tr><th rowspan="2">Method</th><th class="num" rowspan="2">GPUs</th>' + SPEED_BENCHES.map(function (b) {
+    var head = '<tr><th colspan="2" rowspan="2">Method</th><th class="num" rowspan="2">GPUs</th>' + SPEED_BENCHES.map(function (b) {
       return '<th class="grp-col gl" colspan="3">' + b[1] + "</th>";
     }).join("") + "</tr><tr>" + SPEED_BENCHES.map(function () {
       return '<th class="num sub gl">tok/s</th><th class="num sub">Speedup</th><th class="num sub">τ</th>';
     }).join("") + "</tr>";
+    // A method with several setups ("DSpark", "DSpark, disaggregated", ...) takes one multi-row method cell.
+    var base = function (r) { return r[0].split(", ")[0]; };
     var body = MODELS.map(function (m) {
-      return '<tr class="grp"><th colspan="8">' + m.name + "</th></tr>" + SPEED[m.key + "/gsm8k"].rows.map(function (first) {
-        var name = first[0], ours = name === "JetSpec++";
-        return "<tr" + (ours ? ' class="hl"' : "") + "><th>" + (ours ? "JetSpec++ " + m.sched : name) + '</th><td class="num">' +
-          first[7] + "</td>" + SPEED_BENCHES.map(function (b) {
-            var r = speedRow(m.key, b[0], name);
-            return '<td class="num gl">' + fmt(r[1], 1) + '</td><td class="num">' + fmt(r[2], 2) + '×</td><td class="num">' + fmt(r[3], 2) + "</td>";
-          }).join("") + "</tr>";
+      var rows = SPEED[m.key + "/gsm8k"].rows;
+      return '<tr class="grp"><th colspan="9">' + m.name + "</th></tr>" + rows.map(function (first, i) {
+        var name = first[0], ours = name === "JetSpec++", setup = name.split(", ")[1];
+        var n = rows.filter(function (r) { return base(r) === base(first); }).length;
+        var lead = i === 0 || base(rows[i - 1]) !== base(first);
+        var label = ours ? "JetSpec++ " + m.sched : base(first);
+        var method = n === 1 ? '<th colspan="2">' + label + "</th>" :
+          (lead ? '<th rowspan="' + n + '">' + label + "</th>" : "") +
+          '<td class="setup">' + (setup ? setup.charAt(0).toUpperCase() + setup.slice(1) : "Colocated") + "</td>";
+        return "<tr" + (ours ? ' class="hl"' : "") + ">" + method + '<td class="num">' + first[7] + "</td>" + SPEED_BENCHES.map(function (b) {
+          var r = speedRow(m.key, b[0], name);
+          return '<td class="num gl">' + fmt(r[1], 1) + '</td><td class="num">' + fmt(r[2], 2) + '×</td><td class="num">' + fmt(r[3], 2) + "</td>";
+        }).join("") + "</tr>";
       }).join("");
     }).join("");
-    document.getElementById("speed-table").innerHTML = '<table class="dtable even"><caption>' +
-      "<b>Decode speed at batch size 1 on GB200.</b> The table gives tokens per second (tok/s), the speedup over AR on one GPU, and the tokens per round (τ). " +
-      "All runs use batch size 1, temperature 0 and CUDA graphs on GB200. Each benchmark has 128 prompts, and the " +
-      "verification budget is 16 (5 for SSD). GPUs is the number of GPUs that serve one request. JetSpec++ runs J1-R1 " +
-      "on Qwen3-8B and J3-R3 on Qwen3.8-27B. The numbers come from the paper (Table 3).</caption>" + cols(7) + "<thead>" + head +
+    document.getElementById("speed-table").innerHTML = '<table class="dtable even speed"><caption>' +
+      "<b>Decode speed at batch size 1 on GB200.</b> Temperature 0, 128 prompts per benchmark.</caption>" + cols(7).replace('<col class="c-method">', '<col class="c-method"><col class="c-setup">') + "<thead>" + head +
       "</thead><tbody>" + body + "</tbody></table>";
+  }
+
+  /* ---------- batch sizes 1 to 4 ---------- */
+  function renderBatch() {
+    var sizes = [1, 2, 3, 4];
+    var head = '<tr><th colspan="2" rowspan="2">Method</th>' + sizes.map(function (c) {
+      return '<th class="grp-col gl" colspan="2">Batch size ' + c + "</th>";
+    }).join("") + "</tr><tr>" + sizes.map(function () {
+      return '<th class="num sub gl">Total</th><th class="num sub">Per user</th>';
+    }).join("") + "</tr>";
+    // A method with several setups takes one multi-row method cell, as in the decode speed table.
+    var base = function (r) { return r[0].split(", ")[0]; };
+    var cell = function (x) { return x === null ? "&ndash;" : fmt(x, 1); };
+    var body = BATCH.map(function (r, row) {
+      var setup = r[0].split(", ")[1];
+      var n = BATCH.filter(function (x) { return base(x) === base(r); }).length;
+      var lead = row === 0 || base(BATCH[row - 1]) !== base(r);
+      var method = n === 1 ? '<th colspan="2">' + r[0] + "</th>" :
+        (lead ? '<th rowspan="' + n + '">' + base(r) + "</th>" : "") +
+        '<td class="setup">' + (setup ? setup.charAt(0).toUpperCase() + setup.slice(1) : "One GPU") + "</td>";
+      return "<tr" + (r[0] === "JetSpec++" ? ' class="hl"' : "") + ">" + method + sizes.map(function (c, i) {
+        return '<td class="num gl">' + cell(r[1][i]) + '</td><td class="num">' + cell(r[2][i]) + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    document.getElementById("batch-table").innerHTML = '<table class="dtable even batch"><caption>' +
+      "<b>Total and per-user tok/s on GB200, Qwen3-8B, MATH-500.</b> " +
+      "Batch size 1 is from the paper. Batch sizes 2 to 4 are preliminary, from an unreleased development branch with batch optimizations on JetSpec++ only. JetSpec++ runs J1-R1 on two GPUs, with a reduced draft vocabulary above batch size 1. AR runs on one GPU. For DSpark, two GPUs means data parallelism (DP): one replica on each GPU.</caption>" +
+      cols(8).replace('<col class="c-method">', '<col class="c-method"><col class="c-setup">') + "<thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
   }
 
   /* ---------- acceptance length (Tables 1 and 2) ---------- */
@@ -158,10 +183,8 @@
       }).join("");
     }).join("");
     document.getElementById("tau-table").innerHTML = '<table class="dtable even"><caption>' +
-      "<b>Tokens per round at temperature " + state.temp + " and budget " + state.budget + ".</b> " +
-      "The table gives the mean number of tokens committed per verification round (τ). Budget is the block size at verification. J1-R1 runs one Jacobi pass with one " +
-      "context refresh and anchor replacement, and J3-R3 runs three of each. The numbers come from the paper (Table 1 " +
-      "for Qwen3-8B, Table 2 for Qwen3.8-27B).</caption>" + cols(BENCHES.length) + "<thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
+      "<b>Tokens per round (τ) at temperature " + state.temp + " and budget " + state.budget + ".</b> " +
+      "J1-R1 runs one Jacobi pass with one context refresh and anchor replacement, and J3-R3 runs three of each.</caption>" + cols(BENCHES.length) + "<thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
   }
 
   /* ---------- filters ---------- */
@@ -198,6 +221,7 @@
 
   buildFilters();
   renderSpeed();
+  renderBatch();
   renderTau();
   syncVideos();
 })();

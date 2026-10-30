@@ -36,7 +36,7 @@
       <nav class="resource-links" aria-label="Project resources">
         <a href="https://arxiv.org/abs/2610.19792">[Paper]</a>
         <a href="https://github.com/hao-ai-lab/JetSpec">[Code]</a>
-        <a href="https://huggingface.co/JetSpec">[Models]</a>
+        <a href="https://huggingface.co/collections/JetSpec/jetspec-plus-plus-releases">[Models]</a>
         <a href="#bibtex">[BibTeX]</a>
         <a href="https://jetspec-project.github.io/jetspec-web/">[JetSpec]</a>
       </nav>
@@ -48,8 +48,7 @@
       <strong>JetSpec++</strong> keeps the strong draft model and hides almost all of its cost.
       It drafts the next block on a second GPU while the target verifies the current one.
       It predicts the verification outcome with <strong>foresight drafting</strong>, and it refines the draft with Jacobi passes while it waits.
-      With the target and the draft model on two GB200 GPUs, it decodes Qwen3-8B up to <strong>7.45&times; faster than autoregressive decoding</strong> and <strong>1.54&times; faster than DSpark</strong>, both on one GPU.
-      The output distribution of the target model does not change.
+      With the target and the draft model on two GB200 GPUs, it decodes Qwen3-8B up to <strong>7.45&times; faster than autoregressive decoding</strong> and <strong>1.54&times; faster than DSpark</strong>.
     </p>
 
     <figure class="video" data-video="overview">
@@ -60,18 +59,16 @@
     <section class="section" id="approach">
       <p class="sec-eyebrow">Approach</p>
       <h2>How JetSpec++ works</h2>
-      <p>JetSpec++ combines three parts. Pipelined drafting and verification moves the draft off the critical path. Foresight drafting lets the draft model start before verification ends. Self refinement spends the freed time on better drafts.</p>
 
       <h3>Pipelined drafting and verification</h3>
-      <p>JetSpec++ drafts block t+1 while the target model verifies block t, with the draft model on a second GPU. The draft process predicts the verification outcome: the number of accepted draft tokens and the identity of the bonus token. It fills a speculation cache with one pre-drafted block per likely outcome. A cache hit makes the matching block the next block. A cache miss falls back to an ordinary speculative step.</p>
+      <p>Draft-verification pipelining drafts block t+1 while block t is being verified. The draft process anticipates the verification outcome, the number of accepted draft tokens together with the bonus anchor token, and fills a speculation cache with one pre-drafted block per anticipated outcome. A cache hit makes the matching pre-drafted block the next block, and a cache miss falls back to an ordinary speculative step.</p>
 
       <h3>Foresight drafting</h3>
-      <p>A draft model that reads the target's hidden states normally waits for verification to finish. Foresight drafting removes this wait. It predicts the target hidden states of the block under verification, scores every possible outcome, and selects the most probable ones. The draft model drafts all selected outcomes in one batch. Without context refresh, the draft model keeps 95 to 98% of the acceptance length it reaches from the target's true states.</p>
-      <p>The <strong>adapter</strong> is a hidden-to-hidden predictor. At each target layer that the draft model reads, it attends to the cached verified prefix and predicts, in one parallel pass, the target hidden states of every position in the block under verification. The <strong>decoder</strong> turns these predicted states into outcome probabilities. It reuses the frozen weights of the target's last layers, its final norm and its LM head, and it scores every outcome in one causal pass.</p>
+      <p>Foresight drafting consists of an <strong>adapter</strong>, a <strong>decoder</strong> and the draft model. The adapter predicts, in one parallel pass, the target hidden states of every position in the block under verification. The decoder reuses frozen weights from the target's last few layers, followed by the target's final norm and LM head, and turns these predictions into the outcome distributions. One decoder pass scores every outcome at once. The draft process selects the most promising outcomes and drafts them in one batch. Without context refresh, the draft model keeps 95 to 98% of the acceptance length it reaches from the target's true states.</p>
       <figure class="paper-figure">
         <img class="fig-light" src="figures/foresight-overview.svg" alt="The adapter, the decoder and the draft model filling the speculation cache" loading="lazy">
         <img class="fig-dark" src="figures/foresight-overview-dark.svg" alt="The adapter, the decoder and the draft model filling the speculation cache" loading="lazy">
-        <figcaption>Foresight drafting. (a) The draft model drafts the selected outcomes in one batch with J+1 passes. (b) At each target layer that the draft model reads, the adapter predicts the states of the current block, and the decoder turns the top-layer predictions into the outcome distribution. (c) The speculation cache for block t+1 holds, for each selected outcome, its accepted draft tokens, the predicted states and the anchor token. Figure from the paper (Figure 2).</figcaption>
+        <figcaption>Foresight drafting.</figcaption>
       </figure>
 
       <h3>Self refinement</h3>
@@ -80,25 +77,24 @@
         <video muted loop playsinline preload="metadata" data-src-light="media/mechanism-light.mp4" data-src-dark="media/mechanism-dark.mp4" aria-label="Self refinement video"></video>
         <div class="video-pending" aria-hidden="true">Self refinement video: in preparation</div>
       </figure>
-      <p>A parallel draft model predicts each position in the block without seeing the draft tokens before it. JetSpec++ trains the draft model to repair its own draft instead. Each Jacobi pass lets every position condition on the tokens drafted before it, and the passes run inside the time that pipelining frees.</p>
-      <p>Between two passes, JetSpec++ simulates verification with the adapter and the decoder. A <strong>context refresh</strong> re-predicts the target hidden states of the current draft. The decoder then finds the first position where its top token differs from the draft, and an <strong>anchor replacement</strong> writes the decoder's token there. The next pass redrafts only the later positions.</p>
+      <p>A parallel draft model marginalizes each position over its possible predecessors. JetSpec++ instead lets the draft model refine its own draft in parallel, in the time that pipelining frees under verification.</p>
+      <p>Self refinement combines three operations. In a <strong>Jacobi iteration</strong>, each position conditions on the tokens drafted before it. In a <strong>context refresh</strong>, the adapter re-predicts the target hidden states of the current draft. In an <strong>anchor replacement</strong>, the decoder finds the first position at which its most likely token differs from the draft and writes its token there. The next pass redrafts only the later positions.</p>
 
       <h3>Lossless</h3>
-      <p>Every committed token passes the target model's rejection sampling rule, so the output distribution is the target model's own. The draft, the foresight and the refinement change only the proposals.</p>
+      <p>Every committed token is verified by the rejection sampling acceptance rule, so the output distribution is unchanged.</p>
     </section>
 
     <section class="section" id="serving">
       <p class="sec-eyebrow">Serving</p>
       <h2>Decode speed on GB200</h2>
-      <p>JetSpec++ runs on its own serving engine with CUDA graphs. The target verifies each block on one GPU, and the draft model runs on a second GPU, so the draft of block t+1 overlaps the verification of block t. The repository includes the command that reruns this table on a GB200 pair.</p>
+      <p>JetSpec++ runs on its own serving engine with CUDA graphs, with the target on one GPU and the draft model on a second GPU.</p>
       <div class="hero-tps">
         <div class="ht-num"><span class="ht-pre">NVFP4</span>4,117<span class="ht-unit">tok/s</span></div>
         <p class="ht-cap">
           With NVFP4 weights and activations, JetSpec++ decodes MATH-500 with Qwen3-8B at <strong>4,117 tok/s</strong> on two GB200 GPUs at batch size 1.
-          In bf16, as in the paper, it decodes <strong>1,361 tok/s</strong>: <strong>7.45&times; over AR</strong> and <strong>1.51&times; over DSpark</strong>, both on one GPU.
+          In bf16, it decodes <strong>1,361 tok/s</strong>: <strong>7.45&times; over AR</strong> and <strong>1.51&times; over DSpark</strong>.
         </p>
       </div>
-      <p class="table-summary" id="speed-summary"></p>
       <div class="table-scroll" id="speed-table"></div>
     </section>
 
@@ -111,9 +107,20 @@
         <div class="segmented" role="group" aria-label="Verification budget" data-filter="budget"></div>
       </div>
       <div class="table-scroll" id="tau-table"></div>
+    </section>
 
-      <h3>Cost and limitations</h3>
-      <p>The speedups use two GPUs for one request, and they are measured against AR on one GPU of the same type. A round whose outcome was not pre-drafted, 7 to 11% of the rounds in Table 3, runs in series, and the margins are smaller at temperature 1.</p>
+    <section class="section" id="batch">
+      <p class="sec-eyebrow">Batching</p>
+      <h2>Throughput and per-user speed</h2>
+      <p>Larger batches raise total throughput but slow down each request. In preliminary runs on Qwen3-8B and MATH-500, JetSpec++ leads DSpark on both throughput and per-user speed at batch sizes 2 to 4.</p>
+      <div class="table-scroll" id="batch-table"></div>
+    </section>
+
+    <section class="section" id="next">
+      <p class="sec-eyebrow">Next</p>
+      <h2>Coming soon</h2>
+      <p><strong>Larger targets.</strong> As target size grows, verification becomes more expensive relative to drafting, which creates a larger window for refinement. We plan to train JetSpec++ for production models that span many GPUs, where the draft model would add only a small share of the hardware.</p>
+      <p><strong>Higher batch sizes.</strong> We are extending JetSpec++ to higher batch sizes and realistic serving workloads. The goal is for drafting to fit around the batched verification schedule, so that the GPUs serving the target model stay fully utilized.</p>
     </section>
 
     <section class="section bib-section" id="bibtex">
@@ -129,7 +136,7 @@
     <footer class="footer">
       <a href="https://arxiv.org/abs/2610.19792">Paper</a>
       <a href="https://github.com/hao-ai-lab/JetSpec">Code</a>
-      <a href="https://huggingface.co/JetSpec">Models</a>
+      <a href="https://huggingface.co/collections/JetSpec/jetspec-plus-plus-releases">Models</a>
       <a href="https://jetspec-project.github.io/jetspec-web/">JetSpec</a>
     </footer>
   </main>

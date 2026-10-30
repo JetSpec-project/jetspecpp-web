@@ -156,6 +156,11 @@ figcaption { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
 /* Fixed layout: the method column has a set width and every number column gets the same width */
 .dtable.even { table-layout: fixed; min-width: 760px; }
 .dtable.even col.c-method { width: 180px; }
+.dtable.even.speed col.c-method,
+.dtable.even.batch col.c-method { width: 90px; }
+.dtable.even col.c-setup { width: 125px; }
+.dtable td.setup { color: var(--muted); }
+.dtable.even.batch { min-width: 760px; }
 .dtable.even td.num, .dtable.even th.num, .dtable.even th.sub { text-align: center; }
 .dtable caption { caption-side: bottom; padding-top: 10px; color: var(--muted); font-size: 14px; line-height: 1.5; text-align: left; }
 .dtable caption b { color: var(--primary); font-weight: 600; }
